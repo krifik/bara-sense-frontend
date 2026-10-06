@@ -280,7 +280,16 @@ const DEFAULT_PERMISSIONS: PermissionItem[] = [
   },
 ]
 
+const APP_NAME = import.meta.env.VITE_APP_NAME || 'BARA-Sense'
+const APP_TAGLINE = import.meta.env.VITE_APP_TAGLINE || 'Building Automation & Realtime Analytics'
+const DEFAULT_CONFIG_TARIFF = import.meta.env.VITE_DEFAULT_TARIFF || '1300-2200VA'
+const DEFAULT_CONFIG_HISTORY_DAYS = parseInt(import.meta.env.VITE_DEFAULT_HISTORY_DAYS || '7', 10) || 7
+const POLL_INTERVAL_MS = parseInt(import.meta.env.VITE_POLL_INTERVAL_MS || '10000', 10) || 10000
+
 const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
+  }
   if (typeof window !== 'undefined') {
     if (window.location.port === '5173') {
       return 'http://localhost:3000'
@@ -293,6 +302,9 @@ const getApiBase = () => {
 const API_BASE = getApiBase()
 
 const getWsUrl = () => {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL
+  }
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.port === '5173' ? 'localhost:3000' : window.location.host
@@ -560,12 +572,12 @@ export default function App() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [chartTimeframe, setChartTimeframe] = useState<'hourly' | 'daily'>('daily')
   const [hoveredChartIndex, setHoveredChartIndex] = useState<number | null>(null)
-  const [selectedTariff, setSelectedTariff] = useState<string>('1300-2200VA')
+  const [selectedTariff, setSelectedTariff] = useState<string>(DEFAULT_CONFIG_TARIFF)
 
   // Daily Usage History State
   const [dailyHistoryList, setDailyHistoryList] = useState<DailyHistoryItem[]>([])
   const [dailyHistorySummary, setDailyHistorySummary] = useState<DailyHistorySummary | null>(null)
-  const [dailyHistoryDays, setDailyHistoryDays] = useState<number>(7)
+  const [dailyHistoryDays, setDailyHistoryDays] = useState<number>(DEFAULT_CONFIG_HISTORY_DAYS)
   const [dailyHistoryLoading, setDailyHistoryLoading] = useState<boolean>(false)
   const [dailyHistoryDeviceFilter, setDailyHistoryDeviceFilter] = useState<string>('')
   const [expandedDayDate, setExpandedDayDate] = useState<string | null>(null)
@@ -1701,7 +1713,7 @@ export default function App() {
     const pollInterval = setInterval(() => {
       fetchTimers()
       fetchSchedules()
-    }, 10000)
+    }, POLL_INTERVAL_MS)
 
     return () => {
       clearInterval(timerInterval)
@@ -2309,13 +2321,13 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-indigo-100 to-cyan-300 bg-clip-text text-transparent flex items-center gap-2">
-                <span>BARA-Sense</span>
+                <span>{APP_NAME}</span>
                 <span className="text-[10px] tracking-widest font-extrabold uppercase px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                   IoT
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                <span className="font-semibold text-indigo-300">BARA</span>: Building Automation &amp; Realtime Analytics
+                <span className="font-semibold text-indigo-300">{APP_NAME.split('-')[0]}</span>: {APP_TAGLINE}
               </p>
             </div>
           </div>
