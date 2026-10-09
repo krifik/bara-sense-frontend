@@ -42,16 +42,29 @@ jobs:
             echo "VITE_POLL_INTERVAL_MS: $(mask "$VITE_POLL_INTERVAL_MS")"
             echo "------------------------------------------"
 
-            # Buat file .env sementara yang bisa dibaca oleh script deploy
-            echo "VITE_APP_NAME=$VITE_APP_NAME" > /tmp/.frontend.env
-            echo "VITE_APP_TAGLINE=$VITE_APP_TAGLINE" >> /tmp/.frontend.env
-            echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" >> /tmp/.frontend.env
-            echo "VITE_WS_URL=$VITE_WS_URL" >> /tmp/.frontend.env
-            echo "VITE_DEFAULT_TARIFF=$VITE_DEFAULT_TARIFF" >> /tmp/.frontend.env
-            echo "VITE_DEFAULT_HISTORY_DAYS=$VITE_DEFAULT_HISTORY_DAYS" >> /tmp/.frontend.env
-            echo "VITE_POLL_INTERVAL_MS=$VITE_POLL_INTERVAL_MS" >> /tmp/.frontend.env
+            # Cari folder repositori git frontend di server
+            FRONTEND_REPO=$(find /root /opt /var/www /home -maxdepth 4 -name ".git" -type d 2>/dev/null | while read gitdir; do
+              if grep -q "bara-sense-frontend" "$gitdir/config"; then
+                dirname "$gitdir"
+                break
+              fi
+            done)
             
-            # Export juga ke current session
+            if [ -n "$FRONTEND_REPO" ]; then
+              echo "Menemukan repositori frontend di $FRONTEND_REPO"
+              echo "VITE_APP_NAME=$VITE_APP_NAME" > "$FRONTEND_REPO/.env"
+              echo "VITE_APP_TAGLINE=$VITE_APP_TAGLINE" >> "$FRONTEND_REPO/.env"
+              echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" >> "$FRONTEND_REPO/.env"
+              echo "VITE_WS_URL=$VITE_WS_URL" >> "$FRONTEND_REPO/.env"
+              echo "VITE_DEFAULT_TARIFF=$VITE_DEFAULT_TARIFF" >> "$FRONTEND_REPO/.env"
+              echo "VITE_DEFAULT_HISTORY_DAYS=$VITE_DEFAULT_HISTORY_DAYS" >> "$FRONTEND_REPO/.env"
+              echo "VITE_POLL_INTERVAL_MS=$VITE_POLL_INTERVAL_MS" >> "$FRONTEND_REPO/.env"
+              echo "Berhasil mengupdate .env di $FRONTEND_REPO"
+            else
+              echo "PERINGATAN: Repositori frontend tidak ditemukan, .env gagal diperbarui!"
+            fi
+            
+            # Tetap export ke current session
             export VITE_APP_NAME=$VITE_APP_NAME
             export VITE_APP_TAGLINE=$VITE_APP_TAGLINE
             export VITE_API_BASE_URL=$VITE_API_BASE_URL
