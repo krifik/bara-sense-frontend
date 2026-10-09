@@ -27,6 +27,21 @@ jobs:
           envs: VITE_APP_NAME,VITE_APP_TAGLINE,VITE_API_BASE_URL,VITE_WS_URL,VITE_DEFAULT_TARIFF,VITE_DEFAULT_HISTORY_DAYS,VITE_POLL_INTERVAL_MS
           script_stop: true
           script: |
+            mask() {
+              local v=$1
+              local l=${#v}
+              if [ -z "$v" ]; then echo "(kosong)"; elif [ $l -le 4 ]; then echo "***"; else echo "${v:0:3}...${v: -3}"; fi
+            }
+            echo "--- Frontend Environment Configuration ---"
+            echo "VITE_APP_NAME: $(mask "$VITE_APP_NAME")"
+            echo "VITE_APP_TAGLINE: $(mask "$VITE_APP_TAGLINE")"
+            echo "VITE_API_BASE_URL: $(mask "$VITE_API_BASE_URL")"
+            echo "VITE_WS_URL: $(mask "$VITE_WS_URL")"
+            echo "VITE_DEFAULT_TARIFF: $(mask "$VITE_DEFAULT_TARIFF")"
+            echo "VITE_DEFAULT_HISTORY_DAYS: $(mask "$VITE_DEFAULT_HISTORY_DAYS")"
+            echo "VITE_POLL_INTERVAL_MS: $(mask "$VITE_POLL_INTERVAL_MS")"
+            echo "------------------------------------------"
+
             # Buat file .env sementara yang bisa dibaca oleh script deploy
             echo "VITE_APP_NAME=$VITE_APP_NAME" > /tmp/.frontend.env
             echo "VITE_APP_TAGLINE=$VITE_APP_TAGLINE" >> /tmp/.frontend.env
