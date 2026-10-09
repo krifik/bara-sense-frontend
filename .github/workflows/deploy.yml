@@ -42,27 +42,16 @@ jobs:
             echo "VITE_POLL_INTERVAL_MS: $(mask "$VITE_POLL_INTERVAL_MS")"
             echo "------------------------------------------"
 
-            # Cari folder repositori git frontend di server
-            FRONTEND_REPO=$(find /root /opt /var/www /home -maxdepth 4 -name ".git" -type d 2>/dev/null | while read gitdir; do
-              if grep -q "bara-sense-frontend" "$gitdir/config"; then
-                dirname "$gitdir"
-                break
-              fi
-            done)
-            
-            if [ -n "$FRONTEND_REPO" ]; then
-              echo "Menemukan repositori frontend di $FRONTEND_REPO"
-              echo "VITE_APP_NAME=$VITE_APP_NAME" > "$FRONTEND_REPO/.env"
-              echo "VITE_APP_TAGLINE=$VITE_APP_TAGLINE" >> "$FRONTEND_REPO/.env"
-              echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" >> "$FRONTEND_REPO/.env"
-              echo "VITE_WS_URL=$VITE_WS_URL" >> "$FRONTEND_REPO/.env"
-              echo "VITE_DEFAULT_TARIFF=$VITE_DEFAULT_TARIFF" >> "$FRONTEND_REPO/.env"
-              echo "VITE_DEFAULT_HISTORY_DAYS=$VITE_DEFAULT_HISTORY_DAYS" >> "$FRONTEND_REPO/.env"
-              echo "VITE_POLL_INTERVAL_MS=$VITE_POLL_INTERVAL_MS" >> "$FRONTEND_REPO/.env"
-              echo "Berhasil mengupdate .env di $FRONTEND_REPO"
-            else
-              echo "PERINGATAN: Repositori frontend tidak ditemukan, .env gagal diperbarui!"
-            fi
+            # Pastikan env ditulis ke folder frontend (/opt/bara-sense/frontend/.env) untuk Vite build
+            mkdir -p /opt/bara-sense/frontend
+            echo "VITE_APP_NAME=$VITE_APP_NAME" > /opt/bara-sense/frontend/.env
+            echo "VITE_APP_TAGLINE=$VITE_APP_TAGLINE" >> /opt/bara-sense/frontend/.env
+            echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" >> /opt/bara-sense/frontend/.env
+            echo "VITE_WS_URL=$VITE_WS_URL" >> /opt/bara-sense/frontend/.env
+            echo "VITE_DEFAULT_TARIFF=$VITE_DEFAULT_TARIFF" >> /opt/bara-sense/frontend/.env
+            echo "VITE_DEFAULT_HISTORY_DAYS=$VITE_DEFAULT_HISTORY_DAYS" >> /opt/bara-sense/frontend/.env
+            echo "VITE_POLL_INTERVAL_MS=$VITE_POLL_INTERVAL_MS" >> /opt/bara-sense/frontend/.env
+            echo "Berhasil mengupdate .env di /opt/bara-sense/frontend/.env"
             
             # Tetap export ke current session
             export VITE_APP_NAME=$VITE_APP_NAME
