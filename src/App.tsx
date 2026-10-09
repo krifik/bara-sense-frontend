@@ -1514,9 +1514,20 @@ export default function App() {
       const tokenData = await tokenRes.json()
       
       let fetchedToken = ''
-      if (tokenData && tokenData.data && tokenData.data.result) {
-        fetchedToken = tokenData.data.result.token || tokenData.data.result.token_id || ''
+      if (tokenData && tokenData.data) {
+        // Tuya connector wraps response in data.result
+        if (tokenData.data.result) {
+          fetchedToken = tokenData.data.result.token || tokenData.data.result.secret || ''
+        } else if (tokenData.data.token) {
+          fetchedToken = tokenData.data.token
+        }
       }
+      
+      if (!fetchedToken) {
+        const errorMsg = tokenData?.data?.msg || tokenData?.message || 'Format respons tidak dikenali'
+        throw new Error(`Gagal mendapatkan token pairing dari Tuya Cloud. Pesan API: ${errorMsg} | Raw: ${JSON.stringify(tokenData)}`)
+      }
+      
       setPairingToken(fetchedToken)
 
       setBleStep(2)
