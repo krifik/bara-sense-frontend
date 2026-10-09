@@ -10,12 +10,39 @@ jobs:
     steps:
       - name: Deploy Frontend to Server via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          VITE_APP_NAME: ${{ secrets.VITE_APP_NAME }}
+          VITE_APP_TAGLINE: ${{ secrets.VITE_APP_TAGLINE }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_WS_URL: ${{ secrets.VITE_WS_URL }}
+          VITE_DEFAULT_TARIFF: ${{ secrets.VITE_DEFAULT_TARIFF }}
+          VITE_DEFAULT_HISTORY_DAYS: ${{ secrets.VITE_DEFAULT_HISTORY_DAYS }}
+          VITE_POLL_INTERVAL_MS: ${{ secrets.VITE_POLL_INTERVAL_MS }}
         with:
           host: 157.15.124.192
           username: root
           password: ${{ secrets.SERVER_PASSWORD }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
+          envs: VITE_APP_NAME,VITE_APP_TAGLINE,VITE_API_BASE_URL,VITE_WS_URL,VITE_DEFAULT_TARIFF,VITE_DEFAULT_HISTORY_DAYS,VITE_POLL_INTERVAL_MS
           script_stop: true
           script: |
+            # Buat file .env sementara yang bisa dibaca oleh script deploy
+            echo "VITE_APP_NAME=$VITE_APP_NAME" > /tmp/.frontend.env
+            echo "VITE_APP_TAGLINE=$VITE_APP_TAGLINE" >> /tmp/.frontend.env
+            echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" >> /tmp/.frontend.env
+            echo "VITE_WS_URL=$VITE_WS_URL" >> /tmp/.frontend.env
+            echo "VITE_DEFAULT_TARIFF=$VITE_DEFAULT_TARIFF" >> /tmp/.frontend.env
+            echo "VITE_DEFAULT_HISTORY_DAYS=$VITE_DEFAULT_HISTORY_DAYS" >> /tmp/.frontend.env
+            echo "VITE_POLL_INTERVAL_MS=$VITE_POLL_INTERVAL_MS" >> /tmp/.frontend.env
+            
+            # Export juga ke current session
+            export VITE_APP_NAME=$VITE_APP_NAME
+            export VITE_APP_TAGLINE=$VITE_APP_TAGLINE
+            export VITE_API_BASE_URL=$VITE_API_BASE_URL
+            export VITE_WS_URL=$VITE_WS_URL
+            export VITE_DEFAULT_TARIFF=$VITE_DEFAULT_TARIFF
+            export VITE_DEFAULT_HISTORY_DAYS=$VITE_DEFAULT_HISTORY_DAYS
+            export VITE_POLL_INTERVAL_MS=$VITE_POLL_INTERVAL_MS
+            
             /usr/bin/bash /opt/deploy-frontend.sh
