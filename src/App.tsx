@@ -1747,6 +1747,8 @@ export default function App() {
     const pollInterval = setInterval(() => {
       fetchTimers()
       fetchSchedules()
+      fetchDevices()
+      fetchAnalytics()
     }, POLL_INTERVAL_MS)
 
     return () => {
