@@ -13,6 +13,14 @@ export interface WaterTelemetry {
   timestamp?: string
 }
 
+export interface MqttConnectedClient {
+  id: string
+  remote_ip: string
+  connected_at: string
+  is_inline: boolean
+  username?: string
+}
+
 export interface MqttLogEntry {
   id: number
   topic: string
@@ -27,6 +35,7 @@ export interface MqttStatusData {
   listen_addr: string
   port: number
   active_clients: number
+  clients?: MqttConnectedClient[]
   latest_state: string
   latest_water: WaterTelemetry | null
   recent_logs: MqttLogEntry[]
@@ -59,6 +68,7 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
   const [pubRetain, setPubRetain] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [filterTopic, setFilterTopic] = useState('')
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
 
   // Gabungkan logs dari status API dan realtime stream logs
   const displayLogs: MqttLogEntry[] = React.useMemo(() => {
@@ -129,6 +139,36 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
     }
   }
 
+  // Handle Manual Disconnect Client
+  const handleDisconnect = async (clientId: string) => {
+    if (!window.confirm(`Yakin ingin memutuskan koneksi klien MQTT '${clientId}' secara paksa?`)) {
+      return
+    }
+
+    setDisconnectingId(clientId)
+    try {
+      const res = await fetch(`${apiBase}/api/mqtt/disconnect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          'X-User-Role': userRole || 'viewer'
+        },
+        body: JSON.stringify({ client_id: clientId })
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal memutuskan klien MQTT')
+      }
+      onToast(`Klien '${clientId}' berhasil diputus`, 'success', 'Disconnect Client')
+    } catch (err: any) {
+      onToast(err.message, 'error', 'Gagal Disconnect')
+    } finally {
+      setDisconnectingId(null)
+    }
+  }
+
   // Quick Preset Actions
   const handleSendPreset = (topic: string, payload: string) => {
     setPubTopic(topic)
@@ -150,6 +190,8 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
         return 'from-slate-800/40 to-slate-900/40 text-slate-300 border-slate-700/50 shadow-black/40'
     }
   }
+
+  const clientsList = status?.clients || []
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -181,7 +223,7 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
           <div className="px-3 py-1.5 rounded-xl bg-slate-950/60 border border-slate-800 text-right">
             <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Klien Aktif</span>
             <span className="text-sm font-black text-cyan-300 font-mono">
-              {status?.active_clients ?? 0} Perangkat
+              {status?.active_clients ?? clientsList.length} Perangkat
             </span>
           </div>
 
@@ -414,6 +456,85 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
             </form>
           </div>
         </div>
+      </div>
+
+      {/* CONNECTED CLIENTS LIST SECTION */}
+      <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">💻</span>
+            <div>
+              <h3 className="text-base font-bold text-white">Daftar Klien Terhubung ke Broker</h3>
+              <p className="text-xs text-slate-400">NodeMCU ESP8266, sensor, dan service IoT yang aktif di broker port 1883</p>
+            </div>
+          </div>
+          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300">
+            {clientsList.length} Klien Aktif
+          </span>
+        </div>
+
+        {clientsList.length === 0 ? (
+          <div className="py-8 text-center text-slate-500 text-xs italic bg-slate-950/40 rounded-2xl border border-slate-800/60">
+            Belum ada klien MQTT eksternal yang terhubung.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-900/90 border-b border-slate-800 text-slate-300 font-semibold uppercase tracking-wider">
+                <tr>
+                  <th className="py-3 px-4">Client ID / Nama</th>
+                  <th className="py-3 px-4">Alamat IP & Port</th>
+                  <th className="py-3 px-4">Tipe Klien</th>
+                  <th className="py-3 px-4">Tersambung Sejak</th>
+                  <th className="py-3 px-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {clientsList.map((cl) => {
+                  const isDisconnecting = disconnectingId === cl.id
+                  return (
+                    <tr key={cl.id} className="hover:bg-slate-900/40 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-cyan-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span>{cl.id}</span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-200">
+                        {cl.remote_ip}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                          cl.is_inline
+                            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {cl.is_inline ? 'Built-in Server' : 'External Device (IoT)'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-400">
+                        {cl.connected_at}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {cl.is_inline ? (
+                          <span className="text-[11px] text-slate-500 italic select-none">System Core</span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isDisconnecting}
+                            onClick={() => handleDisconnect(cl.id)}
+                            className="px-3 py-1 rounded-lg text-xs font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all cursor-pointer disabled:opacity-50"
+                            title="Putuskan koneksi klien secara paksa"
+                          >
+                            {isDisconnecting ? 'Memutus...' : 'Disconnect ⛔'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* BOTTOM SECTION: LIVE MQTT PACKET LOG CONSOLE */}
