@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Fragment } from 'react'
+import MqttDashboard, { type WaterTelemetry, type MqttLogEntry, type MqttStatusData } from './MqttDashboard'
 
 interface Device {
   id: string
@@ -314,8 +315,12 @@ const getWsUrl = () => {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'quick' | 'dashboard' | 'devices' | 'analytics' | 'settings'>(() => {
+  const [activeTab, setActiveTab] = useState<'quick' | 'dashboard' | 'devices' | 'analytics' | 'settings' | 'mqtt'>(() => {
     if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase()
+      if (path === '/dashboard/mqtt' || path.startsWith('/dashboard/mqtt')) {
+        return 'mqtt'
+      }
       const isMobile = window.innerWidth < 768
       const isGuest = localStorage.getItem('home_auth_user') === null
       if (isMobile || isGuest) return 'quick'
@@ -367,6 +372,11 @@ export default function App() {
   const [showLogsModal, setShowLogsModal] = useState(false)
   const [systemLogs, setSystemLogs] = useState<string[]>([])
   const [isFetchingLogs, setIsFetchingLogs] = useState(false)
+
+  // MQTT Broker & IoT Telemetry State
+  const [mqttStatus, setMqttStatus] = useState<MqttStatusData | null>(null)
+  const [mqttTelemetry, setMqttTelemetry] = useState<WaterTelemetry | null>(null)
+  const [mqttRecentPackets, setMqttRecentPackets] = useState<MqttLogEntry[]>([])
 
   const fetchSystemLogs = async () => {
     setIsFetchingLogs(true)
@@ -1028,6 +1038,28 @@ export default function App() {
                 })
               )
             }
+          } else if (data && data.type === 'mqtt_status') {
+            setMqttStatus(data.status)
+            if (data.status?.latest_water) {
+              setMqttTelemetry(data.status.latest_water)
+            }
+          } else if (data && data.type === 'mqtt_water_telemetry') {
+            setMqttTelemetry(data.telemetry)
+            setMqttStatus(prev => prev ? { ...prev, latest_water: data.telemetry, latest_state: data.telemetry.state } : prev)
+          } else if (data && data.type === 'mqtt_water_state') {
+            setMqttStatus(prev => prev ? { ...prev, latest_state: data.state } : prev)
+          } else if (data && data.type === 'mqtt_packet') {
+            setMqttRecentPackets(prev => {
+              const newEntry = {
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                topic: data.topic,
+                payload: data.payload,
+                client_id: data.client_id || 'unknown',
+                timestamp: data.timestamp || new Date().toLocaleTimeString(),
+                direction: 'in' as const
+              }
+              return [newEntry, ...prev.slice(0, 49)]
+            })
           }
         } catch (e) {
           console.error('[WebSocket] Gagal parse pesan:', e)
@@ -2613,6 +2645,27 @@ export default function App() {
           >
             <span className="text-base">🛡️</span>
             <span>Hak Akses</span>
+          </button>
+
+          <button
+            id="tab-mqtt"
+            onClick={() => {
+              setActiveTab('mqtt')
+              if (window.history && window.history.pushState) {
+                window.history.pushState({}, '', '/dashboard/mqtt')
+              }
+            }}
+            className={`px-5 py-2.5 font-semibold text-sm transition-all border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'mqtt'
+                ? 'border-sky-400 text-sky-300 bg-sky-500/10 rounded-t-xl shadow-sm'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <span className="text-base">📡</span>
+            <span>MQTT IoT</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono">
+              Broker
+            </span>
           </button>
         </div>
 
@@ -5523,6 +5576,20 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB 5: MQTT BROKER & WATER TELEMETRY DASHBOARD */}
+        {activeTab === 'mqtt' && (
+          <MqttDashboard
+            status={mqttStatus}
+            telemetry={mqttTelemetry}
+            recentPackets={mqttRecentPackets}
+            wsConnected={wsConnected}
+            apiBase={API_BASE}
+            authToken={authToken}
+            userRole={currentUser?.role || 'viewer'}
+            onToast={notify.info}
+          />
         )}
       </main>
 
