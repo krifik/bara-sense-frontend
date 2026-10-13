@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 export interface WaterTelemetry {
   valid: boolean
@@ -42,6 +42,30 @@ export interface MqttStatusData {
   last_activity_at: string
 }
 
+export interface WaterAutomationConfig {
+  id: number
+  is_enabled: boolean
+  device_id: string
+  device_name?: string
+  device_status: boolean
+  mode: 'percentage' | 'depth'
+  turn_on_pct: number
+  turn_off_pct: number
+  turn_on_depth_cm: number
+  turn_off_depth_cm: number
+  safety_timeout_min: number
+  cooldown_sec: number
+  last_action: string
+  last_triggered_at?: string
+}
+
+export interface DeviceOption {
+  id: string
+  name: string
+  status: boolean
+  power?: number
+}
+
 interface MqttDashboardProps {
   status: MqttStatusData | null
   telemetry: WaterTelemetry | null
@@ -50,6 +74,8 @@ interface MqttDashboardProps {
   apiBase: string
   authToken: string
   userRole: string
+  devices?: DeviceOption[]
+  onToggleDevice?: (deviceId: string) => Promise<void> | void
   onToast: (msg: string, type: 'success' | 'error' | 'warning' | 'info', title?: string) => void
 }
 
@@ -61,6 +87,8 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
   apiBase,
   authToken,
   userRole,
+  devices = [],
+  onToggleDevice,
   onToast
 }) => {
   const [pubTopic, setPubTopic] = useState('home/water/pump/control')
@@ -173,6 +201,136 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
   const handleSendPreset = (topic: string, payload: string) => {
     setPubTopic(topic)
     setPubPayload(payload)
+  }
+
+  // State Otomasi Pompa & Level Air Tandon
+  const [autoConfig, setAutoConfig] = useState<WaterAutomationConfig | null>(null)
+  const [autoLoading, setAutoLoading] = useState(false)
+  const [savingAuto, setSavingAuto] = useState(false)
+  const [showAutoForm, setShowAutoForm] = useState(false)
+
+  // Form Fields
+  const [autoEnabled, setAutoEnabled] = useState(true)
+  const [autoDeviceId, setAutoDeviceId] = useState('')
+  const [autoMode, setAutoMode] = useState<'percentage' | 'depth'>('percentage')
+  const [autoTurnOnPct, setAutoTurnOnPct] = useState(25)
+  const [autoTurnOffPct, setAutoTurnOffPct] = useState(90)
+  const [autoTurnOnDepth, setAutoTurnOnDepth] = useState(30)
+  const [autoTurnOffDepth, setAutoTurnOffDepth] = useState(100)
+  const [autoSafetyTimeout, setAutoSafetyTimeout] = useState(60)
+
+  // Fetch Konfigurasi Otomasi dari Server
+  const fetchWaterAutoConfig = async () => {
+    try {
+      setAutoLoading(true)
+      const res = await fetch(`${apiBase}/api/water-automation`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'X-User-Role': userRole || 'viewer'
+        }
+      })
+      const data = await res.json()
+      if (res.ok && data?.data) {
+        const cfg: WaterAutomationConfig = data.data
+        setAutoConfig(cfg)
+        setAutoEnabled(cfg.is_enabled)
+        setAutoDeviceId(cfg.device_id || '')
+        setAutoMode(cfg.mode || 'percentage')
+        setAutoTurnOnPct(cfg.turn_on_pct ?? 25)
+        setAutoTurnOffPct(cfg.turn_off_pct ?? 90)
+        setAutoTurnOnDepth(cfg.turn_on_depth_cm ?? 30)
+        setAutoTurnOffDepth(cfg.turn_off_depth_cm ?? 100)
+        setAutoSafetyTimeout(cfg.safety_timeout_min ?? 60)
+      }
+    } catch (err: any) {
+      console.warn('Gagal memuat konfigurasi water automation:', err)
+    } finally {
+      setAutoLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchWaterAutoConfig()
+  }, [apiBase, authToken])
+
+  // Simpan Konfigurasi Otomasi
+  const handleSaveWaterAuto = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!autoDeviceId) {
+      onToast('Pilih perangkat saklar pompa air', 'warning', 'Validasi')
+      return
+    }
+
+    if (autoMode === 'percentage' && autoTurnOnPct >= autoTurnOffPct) {
+      onToast('Batas Nyala Otomatis harus lebih kecil dari Batas Mati Otomatis (%)', 'warning', 'Validasi')
+      return
+    }
+
+    if (autoMode === 'depth' && autoTurnOnDepth >= autoTurnOffDepth) {
+      onToast('Kedalaman Nyala Otomatis harus lebih kecil dari Kedalaman Mati Otomatis (cm)', 'warning', 'Validasi')
+      return
+    }
+
+    setSavingAuto(true)
+    try {
+      const res = await fetch(`${apiBase}/api/water-automation`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          'X-User-Role': userRole || 'viewer'
+        },
+        body: JSON.stringify({
+          is_enabled: autoEnabled,
+          device_id: autoDeviceId,
+          mode: autoMode,
+          turn_on_pct: Number(autoTurnOnPct),
+          turn_off_pct: Number(autoTurnOffPct),
+          turn_on_depth_cm: Number(autoTurnOnDepth),
+          turn_off_depth_cm: Number(autoTurnOffDepth),
+          safety_timeout_min: Number(autoSafetyTimeout),
+          cooldown_sec: 15
+        })
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menyimpan konfigurasi otomasi')
+      }
+      onToast('Konfigurasi otomatisasi level tandon air berhasil disimpan!', 'success', 'Otomasi Air Aktif')
+      fetchWaterAutoConfig()
+      setShowAutoForm(false)
+    } catch (err: any) {
+      onToast(err.message, 'error', 'Simpan Gagal')
+    } finally {
+      setSavingAuto(false)
+    }
+  }
+
+  // Quick Toggle Enable/Disable Automation
+  const handleToggleAutoEnabled = async (newVal: boolean) => {
+    if (!autoConfig) return
+    try {
+      const res = await fetch(`${apiBase}/api/water-automation`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          'X-User-Role': userRole || 'viewer'
+        },
+        body: JSON.stringify({
+          ...autoConfig,
+          is_enabled: newVal
+        })
+      })
+      if (res.ok) {
+        setAutoEnabled(newVal)
+        setAutoConfig(prev => prev ? { ...prev, is_enabled: newVal } : null)
+        onToast(`Otomasi air sekarang ${newVal ? 'DIAKTIFKAN' : 'DINONAKTIFKAN'}`, 'info', 'Status Otomasi')
+      }
+    } catch (err: any) {
+      onToast(err.message, 'error', 'Gagal')
+    }
   }
 
   // Color state mapping
@@ -459,6 +617,320 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
             </form>
           </div>
         </div>
+      </div>
+
+      {/* OTOMASI PINTAR PERANGKAT AIR (TANDON / POMPA AIR BERDASARKAN LEVEL AIR) */}
+      <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-indigo-500/30 shadow-2xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center text-xl sm:text-2xl shadow-lg shadow-indigo-950/50 flex-shrink-0">
+              ⚡
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  Otomasi Saklar Pompa Air Otomatis
+                </h3>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider border ${
+                  autoConfig?.is_enabled
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}>
+                  {autoConfig?.is_enabled ? 'Otomasi Aktif' : 'Nonaktif'}
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+                Nyalakan saklar pompa secara otomatis saat air tandon berkurang, dan matikan saat tandon penuh.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleToggleAutoEnabled(!autoConfig?.is_enabled)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                autoConfig?.is_enabled
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              }`}
+            >
+              <span>{autoConfig?.is_enabled ? '✅ Otomasi Aktif' : '⏸️ Aktifkan Otomasi'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAutoForm(!showAutoForm)}
+              disabled={autoLoading}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <span>⚙️ {autoLoading ? 'Memuat...' : (showAutoForm ? 'Tutup Pengaturan' : 'Atur Batas')}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Status Ringkasan & Kartu Perangkat Terhubung */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Target Perangkat Saklar */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+            <div className="min-w-0 flex-1">
+              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Perangkat Saklar Pompa
+              </span>
+              <span className="text-xs sm:text-sm font-black text-white truncate block mt-0.5">
+                {autoConfig?.device_name || 'Belum dipilih'}
+              </span>
+              <span className="text-[10px] font-mono text-slate-500 block">
+                ID: {autoConfig?.device_id || '-'}
+              </span>
+            </div>
+
+            {autoConfig?.device_id && onToggleDevice && (
+              <button
+                type="button"
+                onClick={() => onToggleDevice(autoConfig.device_id)}
+                className={`ml-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex-shrink-0 cursor-pointer ${
+                  autoConfig.device_status
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                {autoConfig.device_status ? 'NYALA' : 'MATI'}
+              </button>
+            )}
+          </div>
+
+          {/* Ambang Batas Trigger */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Parameter Ambang Batas
+            </span>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-xs sm:text-sm font-bold text-emerald-400">
+                Nyala: {autoConfig?.mode === 'depth' ? `${autoConfig.turn_on_depth_cm} cm` : `${autoConfig?.turn_on_pct ?? 25}%`}
+              </span>
+              <span className="text-slate-500 font-mono">→</span>
+              <span className="text-xs sm:text-sm font-bold text-rose-400">
+                Mati: {autoConfig?.mode === 'depth' ? `${autoConfig.turn_off_depth_cm} cm` : `${autoConfig?.turn_off_pct ?? 90}%`}
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              Mode: <strong className="text-cyan-300 uppercase">{autoConfig?.mode === 'depth' ? 'Kedalaman Air' : 'Persentase Tandon'}</strong>
+            </span>
+          </div>
+
+          {/* Riwayat Aksi Terakhir */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Aksi Otomasi Terakhir
+            </span>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                autoConfig?.last_action?.startsWith('START') ? 'bg-emerald-400' : 'bg-slate-500'
+              }`} />
+              <span className="text-xs sm:text-sm font-black font-mono text-cyan-300">
+                {autoConfig?.last_action || 'IDLE'}
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500 block mt-0.5 truncate">
+              {autoConfig?.last_triggered_at ? autoConfig.last_triggered_at : 'Belum pernah tertrigger'}
+            </span>
+          </div>
+        </div>
+
+        {/* FORM PENGATURAN AMBANG BATAS & PERANGKAT OTOMASI */}
+        {showAutoForm && (
+          <form onSubmit={handleSaveWaterAuto} className="p-4 sm:p-5 rounded-2xl bg-slate-950/90 border border-indigo-500/30 space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                <span>🛠️</span> Konfigurasi Pemicu Otomatisasi Tandon Air
+              </h4>
+              <span className="text-[10px] text-slate-400">Tekan Simpan untuk menerapkan</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
+              {/* Pilihan Perangkat */}
+              <div className="sm:col-span-6">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Pilih Perangkat Saklar Pompa
+                </label>
+                <select
+                  value={autoDeviceId}
+                  onChange={(e) => setAutoDeviceId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  required
+                >
+                  <option value="">-- Pilih Perangkat Saklar --</option>
+                  {devices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.status ? 'Sedang ON' : 'OFF'})
+                    </option>
+                  ))}
+                  {/* Fallback jika list devices kosong tetapi id terdaftar */}
+                  {devices.length === 0 && autoConfig?.device_id && (
+                    <option value={autoConfig.device_id}>
+                      {autoConfig.device_name || 'Pompa Air Terdaftar'} ({autoConfig.device_id})
+                    </option>
+                  )}
+                </select>
+              </div>
+
+              {/* Mode Pemicu */}
+              <div className="sm:col-span-6">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Metode Penentuan Level Air
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAutoMode('percentage')}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                      autoMode === 'percentage'
+                        ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500 shadow-md shadow-indigo-950'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-850'
+                    }`}
+                  >
+                    Persentase (%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoMode('depth')}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                      autoMode === 'depth'
+                        ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500 shadow-md shadow-indigo-950'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-850'
+                    }`}
+                  >
+                    Kedalaman Air (cm)
+                  </button>
+                </div>
+              </div>
+
+              {/* Slider / Input Batas Nyala & Mati */}
+              {autoMode === 'percentage' ? (
+                <>
+                  <div className="sm:col-span-6">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Batas Nyala Otomatis (Saat Air Kurang)
+                      </label>
+                      <span className="text-xs font-mono font-bold text-emerald-400">{autoTurnOnPct}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={5}
+                      max={80}
+                      step={1}
+                      value={autoTurnOnPct}
+                      onChange={(e) => setAutoTurnOnPct(Number(e.target.value))}
+                      className="w-full accent-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-[10px] text-slate-500 block mt-1">
+                      Pompa akan otomatis <strong className="text-emerald-400">NYALA</strong> jika kapasitas ≤ {autoTurnOnPct}%
+                    </span>
+                  </div>
+
+                  <div className="sm:col-span-6">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Batas Mati Otomatis (Saat Tandon Terisi)
+                      </label>
+                      <span className="text-xs font-mono font-bold text-rose-400">{autoTurnOffPct}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={98}
+                      step={1}
+                      value={autoTurnOffPct}
+                      onChange={(e) => setAutoTurnOffPct(Number(e.target.value))}
+                      className="w-full accent-rose-500 cursor-pointer"
+                    />
+                    <span className="text-[10px] text-slate-500 block mt-1">
+                      Pompa akan otomatis <strong className="text-rose-400">MATI</strong> jika kapasitas ≥ {autoTurnOffPct}%
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="sm:col-span-6">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Kedalaman Air Nyala Otomatis (cm)
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={300}
+                      value={autoTurnOnDepth}
+                      onChange={(e) => setAutoTurnOnDepth(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[10px] text-slate-500 block mt-1">
+                      Pompa menyala saat tinggi air ≤ {autoTurnOnDepth} cm
+                    </span>
+                  </div>
+
+                  <div className="sm:col-span-6">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Kedalaman Air Mati Otomatis (cm)
+                    </label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={350}
+                      value={autoTurnOffDepth}
+                      onChange={(e) => setAutoTurnOffDepth(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[10px] text-slate-500 block mt-1">
+                      Pompa mati saat tinggi air ≥ {autoTurnOffDepth} cm
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* Safety Max Runtime */}
+              <div className="sm:col-span-12">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Proteksi Batas Waktu Nyala Maksimal (Menit)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={5}
+                    max={240}
+                    value={autoSafetyTimeout}
+                    onChange={(e) => setAutoSafetyTimeout(Number(e.target.value))}
+                    className="w-32 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    required
+                  />
+                  <span className="text-[11px] text-slate-400">
+                    Menit (Mencegah pompa terus menyala tanpa henti jika sensor kotor atau ada kebocoran pipa)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowAutoForm(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={savingAuto}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {savingAuto ? 'Menyimpan...' : 'Simpan Konfigurasi Otomasi 💾'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* CONNECTED CLIENTS LIST SECTION */}

@@ -5588,6 +5588,11 @@ export default function App() {
             apiBase={API_BASE}
             authToken={authToken}
             userRole={currentUser?.role || 'viewer'}
+            devices={devices}
+            onToggleDevice={(devId) => {
+              const d = devices.find(x => x.id === devId)
+              if (d) handleToggle(d.id, d.status)
+            }}
             onToast={notify.info}
           />
         )}
