@@ -53,6 +53,10 @@ export interface WaterAutomationConfig {
   turn_off_pct: number
   turn_on_depth_cm: number
   turn_off_depth_cm: number
+  tank_total_depth_cm?: number
+  tank_sensor_offset_min_cm?: number
+  tank_threshold_low_pct?: number
+  tank_threshold_high_pct?: number
   safety_timeout_min: number
   cooldown_sec: number
   last_action: string
@@ -218,6 +222,10 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
   const [autoTurnOnDepth, setAutoTurnOnDepth] = useState(30)
   const [autoTurnOffDepth, setAutoTurnOffDepth] = useState(100)
   const [autoSafetyTimeout, setAutoSafetyTimeout] = useState(60)
+  const [tankTotalDepth, setTankTotalDepth] = useState(100)
+  const [tankSensorOffset, setTankSensorOffset] = useState(20)
+  const [tankThresholdLow, setTankThresholdLow] = useState(25)
+  const [tankThresholdHigh, setTankThresholdHigh] = useState(90)
 
   // Fetch Konfigurasi Otomasi dari Server
   const fetchWaterAutoConfig = async () => {
@@ -241,6 +249,10 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
         setAutoTurnOnDepth(cfg.turn_on_depth_cm ?? 30)
         setAutoTurnOffDepth(cfg.turn_off_depth_cm ?? 100)
         setAutoSafetyTimeout(cfg.safety_timeout_min ?? 60)
+        setTankTotalDepth(cfg.tank_total_depth_cm ?? 100)
+        setTankSensorOffset(cfg.tank_sensor_offset_min_cm ?? 20)
+        setTankThresholdLow(cfg.tank_threshold_low_pct ?? 25)
+        setTankThresholdHigh(cfg.tank_threshold_high_pct ?? 90)
       }
     } catch (err: any) {
       console.warn('Gagal memuat konfigurasi water automation:', err)
@@ -253,11 +265,21 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
     fetchWaterAutoConfig()
   }, [apiBase, authToken])
 
-  // Simpan Konfigurasi Otomasi
+  // Simpan Konfigurasi Otomasi & Geometri Tangki
   const handleSaveWaterAuto = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!autoDeviceId) {
       onToast('Pilih perangkat saklar pompa air', 'warning', 'Validasi')
+      return
+    }
+
+    if (tankTotalDepth <= 0) {
+      onToast('Kedalaman total tangki harus lebih besar dari 0 cm', 'warning', 'Validasi')
+      return
+    }
+
+    if (tankThresholdLow >= tankThresholdHigh) {
+      onToast('Ambang batas rendah tangki (Low) harus lebih kecil dari ambang batas penuh (High)', 'warning', 'Validasi')
       return
     }
 
@@ -288,6 +310,10 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
           turn_off_pct: Number(autoTurnOffPct),
           turn_on_depth_cm: Number(autoTurnOnDepth),
           turn_off_depth_cm: Number(autoTurnOffDepth),
+          tank_total_depth_cm: Number(tankTotalDepth),
+          tank_sensor_offset_min_cm: Number(tankSensorOffset),
+          tank_threshold_low_pct: Number(tankThresholdLow),
+          tank_threshold_high_pct: Number(tankThresholdHigh),
           safety_timeout_min: Number(autoSafetyTimeout),
           cooldown_sec: 15
         })
@@ -297,7 +323,7 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Gagal menyimpan konfigurasi otomasi')
       }
-      onToast('Konfigurasi otomatisasi level tandon air berhasil disimpan!', 'success', 'Otomasi Air Aktif')
+      onToast('Konfigurasi dimensi tangki & otomasi tandon berhasil disimpan!', 'success', 'Tersimpan')
       fetchWaterAutoConfig()
       setShowAutoForm(false)
     } catch (err: any) {
@@ -457,8 +483,11 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
             {/* Quick Summary Aside (Responsive Grid on Mobile) */}
             <div className="grid grid-cols-2 sm:grid-cols-1 gap-2.5 w-full sm:w-auto sm:flex-1 sm:max-w-[200px]">
               <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-slate-950/60 border border-slate-800">
-                <span className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Kedalaman Air</span>
-                <span className="text-base sm:text-xl font-black text-white font-mono">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Kedalaman Air</span>
+                  <span className="text-[9px] text-cyan-400 font-mono">/ {autoConfig?.tank_total_depth_cm ?? 100}cm</span>
+                </div>
+                <span className="text-base sm:text-xl font-black text-white font-mono mt-0.5 block">
                   {water ? `${water.water_depth_cm.toFixed(1)} cm` : '--'}
                 </span>
               </div>
@@ -670,7 +699,7 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
         </div>
 
         {/* Status Ringkasan & Kartu Perangkat Terhubung */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           {/* Target Perangkat Saklar */}
           <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
             <div className="min-w-0 flex-1">
@@ -698,6 +727,22 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
                 {autoConfig.device_status ? 'NYALA' : 'MATI'}
               </button>
             )}
+          </div>
+
+          {/* Dimensi Fisik Tangki */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Dimensi Tangki & Sensor
+            </span>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-xs sm:text-sm font-bold text-cyan-400 font-mono">
+                {autoConfig?.tank_total_depth_cm ?? 100} cm
+              </span>
+              <span className="text-slate-500 text-[10px] font-mono">(Offset {autoConfig?.tank_sensor_offset_min_cm ?? 20}cm)</span>
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              Low: <strong className="text-amber-400 font-mono">{autoConfig?.tank_threshold_low_pct ?? 25}%</strong> • Full: <strong className="text-emerald-400 font-mono">{autoConfig?.tank_threshold_high_pct ?? 90}%</strong>
+            </span>
           </div>
 
           {/* Ambang Batas Trigger */}
@@ -890,6 +935,105 @@ export const MqttDashboard: React.FC<MqttDashboardProps> = ({
                   </div>
                 </>
               )}
+
+              {/* Dimensi Fisik Tangki & Sensor Offset (Configurable di DB) */}
+              <div className="sm:col-span-12 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📐</span> Parameter Fisik Tangki & Sensor JSN-SR04T
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">Diterapkan ke Perhitungan Telemetri</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  {/* TANK_TOTAL_DEPTH_CM */}
+                  <div>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Kedalaman Tangki (cm)
+                    </label>
+                    <input
+                      type="number"
+                      min={20}
+                      max={500}
+                      step={0.5}
+                      value={tankTotalDepth}
+                      onChange={(e) => setTankTotalDepth(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-cyan-300 font-mono font-bold focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[9px] text-slate-500 block mt-1">
+                      (TANK_TOTAL_DEPTH_CM) Dasar ke bibir penuh
+                    </span>
+                  </div>
+
+                  {/* TANK_SENSOR_OFFSET_MIN_CM */}
+                  <div>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Offset Sensor Min (cm)
+                    </label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={100}
+                      step={0.5}
+                      value={tankSensorOffset}
+                      onChange={(e) => setTankSensorOffset(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-cyan-300 font-mono font-bold focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[9px] text-slate-500 block mt-1">
+                      (OFFSET_MIN) Jarak sensor ke air penuh
+                    </span>
+                  </div>
+
+                  {/* TANK_THRESHOLD_LOW_PERCENT */}
+                  <div>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Ambang Batas Low (%)
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={50}
+                      step={1}
+                      value={tankThresholdLow}
+                      onChange={(e) => setTankThresholdLow(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-amber-300 font-mono font-bold focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[9px] text-slate-500 block mt-1">
+                      Status LOW_LEVEL jika kapasitas ≤ {tankThresholdLow}%
+                    </span>
+                  </div>
+
+                  {/* TANK_THRESHOLD_HIGH_PERCENT */}
+                  <div>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Ambang Batas High (%)
+                    </label>
+                    <input
+                      type="number"
+                      min={60}
+                      max={98}
+                      step={1}
+                      value={tankThresholdHigh}
+                      onChange={(e) => setTankThresholdHigh(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-emerald-300 font-mono font-bold focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[9px] text-slate-500 block mt-1">
+                      Status FULL jika kapasitas ≥ {tankThresholdHigh}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Info rumus live */}
+                <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[10px] text-slate-400 flex flex-wrap items-center justify-between gap-2">
+                  <span>💡 Jarak Maksimal Terbaca Kosong: <strong className="text-white font-mono">{tankTotalDepth + tankSensorOffset} cm</strong></span>
+                  <span>Kedalaman Air: <code className="text-cyan-300 font-mono">({tankTotalDepth + tankSensorOffset} - Jarak Sensor) cm</code></span>
+                  <span>Persentase: <code className="text-cyan-300 font-mono">(Kedalaman Air / {tankTotalDepth}) × 100%</code></span>
+                </div>
+              </div>
 
               {/* Safety Max Runtime */}
               <div className="sm:col-span-12">
